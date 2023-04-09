@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Backend": {
+      "commandName": "Project",
+      "commandLineArgs": "1X9WTuDUmSPK3qC1bYwG18oPzD87kxJ4LVjfa5sZ0nE http://localhost:8080 http://localhost:8080 1234567890123456"
+    }
+  }
+}

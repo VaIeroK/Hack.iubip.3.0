@@ -1,0 +1,8 @@
+.vs/
+/Bin/
+Intermediate/
+/Lib/
+*.vcxproj.user
+*sqlite
+Backend/obj
+Backend/bin
