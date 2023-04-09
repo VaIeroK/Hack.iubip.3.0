@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using Backend;
 using Dapper;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace Backend
 {
@@ -17,7 +19,17 @@ namespace Backend
     {
         static void Main(string[] args)
         {
-            StartServer(args);
+            while (true)
+            {
+                try
+                {
+                    StartServer(args);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+            }
         }
 
         static void StartServer(string[] args)
@@ -55,90 +67,14 @@ namespace Backend
                 var path = request.Url.LocalPath;
 
                 // Добавление заголовков CORS
-                string[] allowedHeaders = new string[] {
-                    "Accept",
-                    "Accept-Language",
-                    "Content-Language",
-                    "Content-Type",
-                    "Authorization",
-                    "Access-Control-Request-Method",
-                    "Access-Control-Request-Headers",
-                    "Origin",
-                    "X-Requested-With",
-                    "X-HTTP-Method-Override",
-                    "X-Forwarded-For",
-                    "X-Real-IP",
-                    "If-Match",
-                    "If-None-Match",
-                    "If-Modified-Since",
-                    "If-Unmodified-Since",
-                    "Range",
-                    "DNT",
-                    "Expect",
-                    "Max-Forwards",
-                    "Referer",
-                    "TE",
-                    "User-Agent",
-                    "Cookie",
-                    "Set-Cookie",
-                    "Connection",
-                    "Upgrade"
-                };
-
                 response.AddHeader("Access-Control-Allow-Origin", "*");
                 response.AddHeader("Access-Control-Allow-Credentials", "true");
-                response.AddHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-                response.AddHeader("Access-Control-Allow-Headers", string.Join(", ", allowedHeaders));
+                response.AddHeader("Access-Control-Allow-Methods", "*");
+                response.AddHeader("Access-Control-Allow-Headers", "*");
+                response.AddHeader("Access-Control-Max-Age", "1728000");
 
                 if (request.HttpMethod == "OPTIONS")
                     response.StatusCode = 200; // Created
-                else if (request.HttpMethod == "GET")
-                {
-                    // Выполняем GET запрос
-                    if (path == "/profile")
-                    {
-                        string RefreshToken = request.Headers["Authorization"];
-                        Console.WriteLine("token "+ RefreshToken);
-
-                        var requestBody = new byte[request.ContentLength64];
-                        request.InputStream.Read(requestBody, 0, requestBody.Length);
-                        var Tokens = JsonConvert.DeserializeObject<Tokens>(Encoding.UTF8.GetString(requestBody));
-
-                        List<User> TempUser = connection.Query<User>($"SELECT * FROM Users WHERE Token='{Tokens.RefreshToken}'").ToList();
-                        if (TempUser.Count() > 0)
-                        {
-                            RegisterData registerData = new RegisterData(TempUser[0].DecryptR(DbKey, DbIv));
-                            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(registerData));
-
-                            // Устанавливаем заголовки ответа
-                            response.ContentLength64 = buffer.Length;
-                            response.ContentType = "application/json";
-
-                            response.StatusCode = 200; // Created
-
-                            // Возвращаем данные клиенту
-                            Stream output = response.OutputStream;
-                            output.Write(buffer, 0, buffer.Length);
-                            output.Close();
-                        }
-                        else
-                        {
-                            var LoginData = new { Message = "Пользователь не найден" };
-                            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(LoginData));
-
-                            // Устанавливаем заголовки ответа
-                            response.ContentLength64 = buffer.Length;
-                            response.ContentType = "application/json";
-
-                            response.StatusCode = 401;
-
-                            // Возвращаем данные клиенту
-                            Stream output = response.OutputStream;
-                            output.Write(buffer, 0, buffer.Length);
-                            output.Close();
-                        }
-                    }
-                }
                 else if (request.HttpMethod == "POST")
                 {
                     if (path == "/login")
@@ -147,7 +83,8 @@ namespace Backend
                         request.InputStream.Read(requestBody, 0, requestBody.Length);
                         var newUser = JsonConvert.DeserializeObject<LoginData>(Encoding.UTF8.GetString(requestBody));
                         User logined_user = User.LoginUser(blockchain, allUsers.ToList(), newUser.Email, newUser.Password);
-
+                        for (int i = 0; i < request.Headers.Count; i++)
+                            Console.WriteLine("header " + request.Headers.Get(i));
                         Console.WriteLine("user login " + newUser.Email + " password " + newUser.Password);
                         if (logined_user == null)
                             Console.WriteLine("user not found");
@@ -173,8 +110,8 @@ namespace Backend
                             else
                             {
                                 var jwtService = new JwtService(JwtSecretKey, JwtIssuer, JwtAudience);
-                                var access_token = jwtService.GenerateToken(logined_user.Id - 1, 5);
-                                var refresh_token = jwtService.GenerateToken(logined_user.Id - 1, 1440);
+                                var access_token = jwtService.GenerateToken(logined_user.Id - 1, 1440);
+                                var refresh_token = jwtService.GenerateToken(logined_user.Id - 1, 5);
                                 connection.Execute($"UPDATE Users SET Token='{refresh_token}' WHERE Token='{logined_user.Token}'");
                                 logined_user.Token = refresh_token;
                                 var LoginData = new { AccessToken = access_token, RefreshToken = refresh_token, FirstName = logined_user.FirstName, LastName = logined_user.LastName, Surname = logined_user.Surname, Email = logined_user.Email, PhoneNumber = logined_user.PhoneNumber };
@@ -247,10 +184,12 @@ namespace Backend
                             User logined_user = User.LoginUser(blockchain, allUsers.ToList(), NewUser.Email, newUser.Password);
 
                             var jwtService = new JwtService(JwtSecretKey, JwtIssuer, JwtAudience);
-                            var access_token = jwtService.GenerateToken(logined_user.Id - 1, 5);
-                            var refresh_token = jwtService.GenerateToken(logined_user.Id - 1, 1440);
-                            logined_user.Token = refresh_token;
+                            var access_token = jwtService.GenerateToken(logined_user.Id - 1, 1440);
+                            var refresh_token = jwtService.GenerateToken(logined_user.Id - 1, 5);
+                            logined_user.Token = access_token;
                             connection.Execute($"UPDATE Users SET Token='{logined_user.Token}' WHERE Id=(SELECT max(Id) FROM Users)");
+                            Console.WriteLine("Call Register, access token: " + access_token);
+                            Console.WriteLine("Call Register, refresh token: " + logined_user.Token);
                             var LoginData = new { AccessToken = access_token, RefreshToken = refresh_token, FirstName = logined_user.FirstName, LastName = logined_user.LastName, Surname = logined_user.Surname, Email = logined_user.Email, PhoneNumber = logined_user.PhoneNumber };
                             byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(LoginData));
 
@@ -268,18 +207,25 @@ namespace Backend
                     }
                     else if (path == "/refresh")
                     {
-                        var requestBody = new byte[request.ContentLength64];
-                        request.InputStream.Read(requestBody, 0, requestBody.Length);
-                        var Tokens = JsonConvert.DeserializeObject<Tokens>(Encoding.UTF8.GetString(requestBody));
+                        string token = "";
+                        for (int i = 0; i < request.Headers.Count; i++)
+                        {
+                            string header = request.Headers.Get(i);
+                            if (header.Contains("Bearer "))
+                            {
+                                token = header.Substring(header.IndexOf(" ") + 1);
+                                break;
+                            }
+                        }
 
-                        List<User> TempUser = connection.Query<User>($"SELECT * FROM Users WHERE Token='{Tokens.RefreshToken}'").ToList();
+                        List<User> TempUser = connection.Query<User>($"SELECT * FROM Users WHERE Token='{token}'").ToList();
                         if (TempUser.Count() > 0)
                         {
                             var jwtService = new JwtService(JwtSecretKey, JwtIssuer, JwtAudience);
-                            var access_token = jwtService.GenerateToken(TempUser[0].Id - 1, 5);
-                            var refresh_token = jwtService.GenerateToken(TempUser[0].Id - 1, 1440);
+                            var access_token = jwtService.GenerateToken(TempUser[0].Id - 1, 1440);
+                            var refresh_token = jwtService.GenerateToken(TempUser[0].Id - 1, 5);
                             TempUser[0].Token = refresh_token;
-                            connection.Execute($"UPDATE Users SET Token='{TempUser[0].Token}' WHERE Token='{Tokens.RefreshToken}'");
+                            connection.Execute($"UPDATE Users SET Token='{TempUser[0].Token}' WHERE Token='{token}'");
 
                             var LoginData = new { AccessToken = access_token, RefreshToken = refresh_token };
                             byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(LoginData));
@@ -294,6 +240,8 @@ namespace Backend
                             Stream output = response.OutputStream;
                             output.Write(buffer, 0, buffer.Length);
                             output.Close();
+                            response.Close();
+                            continue;
                         }
                         else
                         {
@@ -310,6 +258,61 @@ namespace Backend
                             Stream output = response.OutputStream;
                             output.Write(buffer, 0, buffer.Length);
                             output.Close();
+                            response.Close();
+                            continue;
+                        }
+                    }
+                    else if (path == "/profile")
+                    {
+                        string token = "";
+                        for (int i = 0; i < request.Headers.Count; i++)
+                        {
+                            string header = request.Headers.Get(i);
+                            if (header.Contains("Bearer "))
+                            {
+                                token = header.Substring(header.IndexOf(" ") + 1);
+                                break;
+                            }
+                        }
+
+                        Console.WriteLine("Call profile, token: " + token);
+                        List<User> TempUser = connection.Query<User>($"SELECT * FROM Users WHERE Token='{token}'").ToList();
+                        if (TempUser.Count() > 0)
+                        {
+                            Console.WriteLine("User found");
+                            RegisterData registerData = new RegisterData(TempUser[0].DecryptR(DbKey, DbIv));
+                            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(registerData));
+
+                            // Устанавливаем заголовки ответа
+                            response.ContentLength64 = buffer.Length;
+                            response.ContentType = "application/json";
+                            response.StatusCode = 200; // Created
+
+                            // Возвращаем данные клиенту
+                            Stream output = response.OutputStream;
+                            output.Write(buffer, 0, buffer.Length);
+                            output.Close();
+                            response.Close();
+                            continue;
+                        }
+                        else
+                        {
+                            Console.WriteLine("User not found");
+                            var LoginData = new { Message = "Пользователь не найден" };
+                            byte[] buffer = System.Text.Encoding.UTF8.GetBytes(Newtonsoft.Json.JsonConvert.SerializeObject(LoginData));
+
+                            // Устанавливаем заголовки ответа
+                            response.ContentLength64 = buffer.Length;
+                            response.ContentType = "application/json";
+
+                            response.StatusCode = 401;
+
+                            // Возвращаем данные клиенту
+                            Stream output = response.OutputStream;
+                            output.Write(buffer, 0, buffer.Length);
+                            output.Close();
+                            response.Close();
+                            continue;
                         }
                     }
                 }
@@ -345,7 +348,7 @@ namespace Backend
                 }
                 else
                 {
-                    response.StatusCode = 405;
+                    response.StatusCode = 200;
                     response.StatusDescription = "Method Not Allowed";
                 }
 
